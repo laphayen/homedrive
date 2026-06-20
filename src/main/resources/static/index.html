@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#050505">
+    <title>HOMEDRIVE — Your files, back home.</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <div class="noise" aria-hidden="true"></div>
+    <div class="orb orb-one" aria-hidden="true"></div>
+    <div class="orb orb-two" aria-hidden="true"></div>
+
+    <main class="shell">
+        <nav class="nav" aria-label="주요 메뉴">
+            <a class="brand" href="/" aria-label="Homedrive 홈">
+                <span class="brand-mark"><i></i><i></i><i></i></span>
+                <span>HOMEDRIVE</span>
+            </a>
+            <div class="system-status"><span></span> PRIVATE NETWORK</div>
+        </nav>
+
+        <section class="hero">
+            <div class="intro">
+                <p class="eyebrow"><span>01</span> SELF-HOSTED STORAGE</p>
+                <h1>Your files,<br><em>back home.</em></h1>
+                <p class="lead">누구의 클라우드도 아닌, 오직 당신의 공간.<br>파일을 직접 소유하고 어디서든 안전하게 연결하세요.</p>
+
+                <div class="feature-row" aria-label="서비스 특징">
+                    <div><strong>∞</strong><span>YOUR CAPACITY</span></div>
+                    <div><strong>256</strong><span>BIT SECURITY</span></div>
+                    <div><strong>01</strong><span>TRUE OWNER</span></div>
+                </div>
+            </div>
+
+            <section class="auth-card glass" aria-labelledby="auth-title">
+                <div class="card-glow" aria-hidden="true"></div>
+                <div class="tabs" role="tablist" aria-label="인증 방식">
+                    <button class="tab active" id="login-tab" role="tab" aria-selected="true" aria-controls="login-panel">LOGIN</button>
+                    <button class="tab" id="register-tab" role="tab" aria-selected="false" aria-controls="register-panel">REGISTER</button>
+                    <span class="tab-line" aria-hidden="true"></span>
+                </div>
+
+                <div id="logged-in" class="session-panel" hidden>
+                    <div class="session-icon"><span></span></div>
+                    <p class="micro">CONNECTION ESTABLISHED</p>
+                    <h2>Welcome home,<br><span id="session-name">user</span>.</h2>
+                    <p id="session-email" class="session-email"></p>
+                    <button id="logout-button" class="primary-button" type="button"><span>DISCONNECT</span><b>↗</b></button>
+                </div>
+
+                <form id="login-panel" class="auth-form active" role="tabpanel" aria-labelledby="login-tab" novalidate>
+                    <div class="form-heading">
+                        <p class="micro">WELCOME BACK</p>
+                        <h2 id="auth-title">Enter your space.</h2>
+                    </div>
+                    <label>USERNAME
+                        <span class="input-wrap">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+                            <input name="username" autocomplete="username" placeholder="your username" required>
+                        </span>
+                    </label>
+                    <label>PASSWORD
+                        <span class="input-wrap">
+                            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+                            <input name="password" type="password" autocomplete="current-password" placeholder="••••••••" required>
+                            <button class="reveal" type="button" aria-label="비밀번호 표시">SHOW</button>
+                        </span>
+                    </label>
+                    <button class="primary-button" type="submit"><span>ENTER HOMEDRIVE</span><b>↗</b></button>
+                    <p class="form-message" aria-live="polite"></p>
+                </form>
+
+                <form id="register-panel" class="auth-form" role="tabpanel" aria-labelledby="register-tab" hidden novalidate>
+                    <div class="form-heading">
+                        <p class="micro">CREATE YOUR SPACE</p>
+                        <h2>Start owning.</h2>
+                    </div>
+                    <label>USERNAME
+                        <span class="input-wrap"><input name="username" autocomplete="username" placeholder="3–30 characters" minlength="3" maxlength="30" required></span>
+                    </label>
+                    <label>EMAIL
+                        <span class="input-wrap"><input name="email" type="email" autocomplete="email" placeholder="you@example.com" required></span>
+                    </label>
+                    <label>PASSWORD
+                        <span class="input-wrap"><input name="password" type="password" autocomplete="new-password" placeholder="minimum 8 characters" minlength="8" required><button class="reveal" type="button" aria-label="비밀번호 표시">SHOW</button></span>
+                    </label>
+                    <button class="primary-button" type="submit"><span>CREATE ACCOUNT</span><b>↗</b></button>
+                    <p class="form-message" aria-live="polite"></p>
+                </form>
+
+                <div class="card-footer"><span>ENCRYPTED CONNECTION</span><span class="pulse-dot"></span><span>SEOUL / KR</span></div>
+            </section>
+        </section>
+
+        <footer><span>© 2026 HOMEDRIVE</span><span>OWN YOUR DATA. OWN YOUR HOME.</span></footer>
+    </main>
+    <script src="/app.js" defer></script>
+</body>
+</html>
