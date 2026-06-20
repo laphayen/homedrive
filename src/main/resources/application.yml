@@ -13,9 +13,9 @@ spring:
       max-request-size: 10GB
 
   datasource:
-    url: jdbc:mysql://localhost:3306/homedrive?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
-    username: root
-    password: root
+    url: ${DB_URL:jdbc:mysql://localhost:3306/homedrive?serverTimezone=Asia/Seoul&characterEncoding=UTF-8}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:root}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
@@ -25,26 +25,25 @@ spring:
     properties:
       hibernate:
         format_sql: true
-        dialect: org.hibernate.dialect.MySQL8Dialect
+        dialect: org.hibernate.dialect.MySQLDialect
 
   data:
     redis:
-      host: localhost
-      port: 6379
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
 
 file:
-  base-dir: /home/laphayen/homedrive/uploads
+  base-dir: ${FILE_BASE_DIR:./uploads}
   use-hash: true
   hash-type: SHA-256
-  chunk-temp-dir: /home/laphayen/homedrive/temp/chunks
+  chunk-temp-dir: ${FILE_CHUNK_TEMP_DIR:./temp/chunks}
   max-chunk-size: 10MB
 
 jwt:
-  secret: your-very-secret-key-should-be-at-least-32-characters
+  secret: ${JWT_SECRET:your-very-secret-key-should-be-at-least-32-characters}
   access-token-validity-ms: 3600000         # 15?
   refresh-token-validity-ms: 604800000      # 7?
 
 logging:
   level:
-    org.hibernate.SQL: debug
-    org.hibernate.type.descriptor.sql: trace
+    org.hibernate.SQL: ${HIBERNATE_SQL_LOG_LEVEL:info}

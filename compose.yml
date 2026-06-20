@@ -1,0 +1,78 @@
+name: homedrive
+
+services:
+  app:
+    container_name: homedrive-spring
+    image: homedrive-app:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "10001:8080"
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/homedrive?serverTimezone=Asia/Seoul&characterEncoding=UTF-8&allowPublicKeyRetrieval=true
+      DB_USERNAME: homedrive
+      DB_PASSWORD: ${MYSQL_PASSWORD:-homedrive-local-password}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET:-homedrive-local-jwt-secret-must-be-at-least-32-characters}
+      FILE_BASE_DIR: /data/uploads
+      FILE_CHUNK_TEMP_DIR: /data/chunks
+      SPRING_JPA_OPEN_IN_VIEW: "false"
+    volumes:
+      - app_uploads:/data/uploads
+      - app_chunks:/data/chunks
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  mysql:
+    container_name: homedrive-mysql
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: homedrive
+      MYSQL_USER: homedrive
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-homedrive-local-password}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-homedrive-local-root-password}
+      TZ: Asia/Seoul
+    ports:
+      - "10003:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-homedrive-local-root-password}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  redis:
+    container_name: homedrive-redis
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "10002:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  mysql_data:
+  redis_data:
+  app_uploads:
+  app_chunks:

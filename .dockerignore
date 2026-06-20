@@ -1,0 +1,10 @@
+.git
+.gradle
+.idea
+build
+out
+uploads
+temp
+*.iml
+README.md
+HELP.md
