@@ -13,6 +13,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
+
 @Service
 @RequiredArgsConstructor
 public class UserService {
@@ -41,7 +43,7 @@ public class UserService {
         String accessToken = jwtTokenProvider.createAccessToken(user);
         String refreshToken = jwtTokenProvider.createRefreshToken(user);
 
-        redisTemplate.opsForValue().set("refresh:" + user.getId(), refreshToken);
+        saveRefreshToken(user.getId(), refreshToken);
 
         return RegisterResponseDto.builder()
                 .accessToken(accessToken)
@@ -66,7 +68,7 @@ public class UserService {
         String accessToken = jwtTokenProvider.createAccessToken(user);
         String refreshToken = jwtTokenProvider.createRefreshToken(user);
 
-        redisTemplate.opsForValue().set("refresh:" + user.getId(), refreshToken);
+        saveRefreshToken(user.getId(), refreshToken);
 
         return LoginResponseDto.builder()
                 .accessToken(accessToken)
@@ -79,5 +81,25 @@ public class UserService {
                 .build();
     }
 
+    public void logout(String accessToken) {
+        Long userId = jwtTokenProvider.getUserId(accessToken);
+        redisTemplate.delete("refresh:" + userId);
 
+        long remainingValidityMs = jwtTokenProvider.getRemainingValidityMs(accessToken);
+        if (remainingValidityMs > 0) {
+            redisTemplate.opsForValue().set(
+                    "blacklist:" + accessToken,
+                    "logout",
+                    Duration.ofMillis(remainingValidityMs)
+            );
+        }
+    }
+
+    private void saveRefreshToken(Long userId, String refreshToken) {
+        redisTemplate.opsForValue().set(
+                "refresh:" + userId,
+                refreshToken,
+                Duration.ofMillis(jwtTokenProvider.getRefreshTokenValidityMs())
+        );
+    }
 }
