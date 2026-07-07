@@ -1,105 +1,465 @@
-const tabs = document.querySelectorAll('.tab');
-const forms = document.querySelectorAll('.auth-form');
-const sessionPanel = document.querySelector('#logged-in');
+const SESSION_KEY = 'homedriveSession';
 
-function switchTab(name) {
-    tabs.forEach((tab) => {
-        const selected = tab.id === `${name}-tab`;
-        tab.classList.toggle('active', selected);
-        tab.setAttribute('aria-selected', String(selected));
+const authScreen = document.querySelector('#auth-screen');
+const dashboardScreen = document.querySelector('#dashboard-screen');
+const authTabs = document.querySelectorAll('[data-auth-mode]');
+const authForms = {
+    login: document.querySelector('#login-form'),
+    register: document.querySelector('#register-form')
+};
+const navButtons = document.querySelectorAll('[data-view]');
+const views = document.querySelectorAll('.view');
+const fileInput = document.querySelector('#file-input');
+
+const state = {
+    session: readSession(),
+    profile: null,
+    currentPath: '/',
+    drive: null
+};
+
+function readSession() {
+    try {
+        return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+    } catch {
+        localStorage.removeItem(SESSION_KEY);
+        return null;
+    }
+}
+
+function writeSession(session) {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    state.session = session;
+}
+
+function clearSession() {
+    localStorage.removeItem(SESSION_KEY);
+    state.session = null;
+    state.profile = null;
+    state.drive = null;
+    state.currentPath = '/';
+}
+
+async function api(path, options = {}) {
+    const headers = { ...(options.headers || {}) };
+    const fetchOptions = {
+        method: options.method || 'GET',
+        headers
+    };
+
+    if (state.session?.accessToken) {
+        headers.Authorization = `Bearer ${state.session.accessToken}`;
+    }
+
+    if (options.body instanceof FormData) {
+        fetchOptions.body = options.body;
+    } else if (options.body) {
+        headers['Content-Type'] = 'application/json';
+        fetchOptions.body = JSON.stringify(options.body);
+    }
+
+    const response = await fetch(path, fetchOptions);
+
+    if (response.status === 401 || response.status === 403) {
+        clearSession();
+        showAuth();
+        throw new Error('Session expired.');
+    }
+
+    if (!response.ok) {
+        throw new Error('Request failed.');
+    }
+
+    if (response.status === 204) {
+        return null;
+    }
+
+    return response.json();
+}
+
+function setAuthMode(mode) {
+    authTabs.forEach((button) => {
+        const active = button.dataset.authMode === mode;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', String(active));
     });
-    forms.forEach((form) => {
-        const selected = form.id === `${name}-panel`;
-        form.classList.toggle('active', selected);
-        form.hidden = !selected;
-        form.querySelector('.form-message').textContent = '';
+
+    Object.entries(authForms).forEach(([key, form]) => {
+        const active = key === mode;
+        form.classList.toggle('active', active);
+        form.hidden = !active;
+        setFormMessage(form, '');
     });
 }
 
-tabs.forEach((tab) => tab.addEventListener('click', () => switchTab(tab.id.replace('-tab', ''))));
+function setFormMessage(form, message, error = false) {
+    const target = form.querySelector('.form-message');
+    target.textContent = message;
+    target.classList.toggle('error', error);
+}
 
-document.querySelectorAll('.reveal').forEach((button) => {
+function showAuth() {
+    dashboardScreen.hidden = true;
+    authScreen.hidden = false;
+    authScreen.classList.add('screen-active');
+}
+
+async function showDashboard() {
+    authScreen.hidden = true;
+    dashboardScreen.hidden = false;
+    authScreen.classList.remove('screen-active');
+    updateUserSurfaces(state.session?.user);
+    setView('home');
+    await Promise.allSettled([loadProfile(), loadDrive('/')]);
+}
+
+function setView(name) {
+    navButtons.forEach((button) => button.classList.toggle('active', button.dataset.view === name));
+    views.forEach((view) => view.classList.toggle('active', view.id === `${name}-view`));
+}
+
+function updateUserSurfaces(user) {
+    if (!user) return;
+
+    const username = user.username || 'user';
+    const email = user.email || '';
+    document.querySelector('#sidebar-user').textContent = username;
+    document.querySelector('#home-username').textContent = username;
+    document.querySelector('#home-email').textContent = email;
+    document.querySelector('#profile-username').textContent = username;
+    document.querySelector('#profile-email').textContent = email;
+    document.querySelector('#profile-id').textContent = user.id || '-';
+    document.querySelector('#profile-initial').textContent = username.slice(0, 1).toUpperCase();
+}
+
+function updateProfile(profile) {
+    state.profile = profile;
+    updateUserSurfaces(profile);
+    document.querySelector('#profile-role').textContent = profile.role || 'USER';
+}
+
+async function loadProfile() {
+    try {
+        const profile = await api('/api/v1/users/me');
+        updateProfile(profile);
+    } catch (error) {
+        console.warn(error.message);
+    }
+}
+
+function updateStats(stats = {}) {
+    document.querySelector('#stat-files').textContent = String(stats.totalFiles || 0);
+    document.querySelector('#stat-folders').textContent = String(stats.totalFolders || 0);
+    document.querySelector('#stat-bytes').textContent = formatBytes(stats.totalBytes || 0);
+}
+
+async function loadDrive(path = state.currentPath) {
+    setDriveMessage('Loading...');
+    try {
+        const data = await api(`/api/v1/files?path=${encodeURIComponent(path)}`);
+        state.drive = data;
+        state.currentPath = data.path || '/';
+        renderDrive(data);
+        updateStats(data.stats);
+        setDriveMessage('');
+    } catch (error) {
+        setDriveMessage(error.message, true);
+    }
+}
+
+function renderDrive(data) {
+    renderTree(data.tree);
+    renderBreadcrumbs(data.path);
+    renderFileList(data.items || []);
+}
+
+function renderTree(tree) {
+    const root = document.querySelector('#folder-tree');
+    root.replaceChildren();
+    if (!tree) return;
+    root.appendChild(createTreeNode(tree));
+}
+
+function createTreeNode(node) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tree-node';
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'tree-button';
+    button.classList.toggle('active', node.path === state.currentPath);
+    button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h6l2 2h8v10a2 2 0 0 1-2 2H4Z"></path></svg>';
+
+    const label = document.createElement('span');
+    label.textContent = node.name;
+    button.appendChild(label);
+    button.addEventListener('click', () => loadDrive(node.path));
+    wrapper.appendChild(button);
+
+    if (node.children?.length) {
+        const children = document.createElement('div');
+        children.className = 'tree-children';
+        node.children.forEach((child) => children.appendChild(createTreeNode(child)));
+        wrapper.appendChild(children);
+    }
+
+    return wrapper;
+}
+
+function renderBreadcrumbs(path) {
+    const target = document.querySelector('#breadcrumbs');
+    target.textContent = path || '/';
+}
+
+function renderFileList(items) {
+    const list = document.querySelector('#file-list');
+    list.replaceChildren();
+
+    if (!items.length) {
+        const empty = document.createElement('div');
+        empty.className = 'empty-state';
+        empty.textContent = 'No files';
+        list.appendChild(empty);
+        return;
+    }
+
+    items.forEach((item) => list.appendChild(createFileRow(item)));
+}
+
+function createFileRow(item) {
+    const row = document.createElement('div');
+    row.className = 'file-row';
+
+    const name = document.createElement('button');
+    name.type = 'button';
+    name.className = 'file-item-name';
+    name.innerHTML = item.type === 'folder'
+        ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h6l2 2h8v10a2 2 0 0 1-2 2H4Z"></path></svg>'
+        : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path><path d="M14 2v6h6"></path></svg>';
+    const label = document.createElement('span');
+    label.textContent = item.name;
+    name.appendChild(label);
+    name.addEventListener('click', () => {
+        if (item.type === 'folder') {
+            loadDrive(item.path);
+        } else {
+            downloadFile(item);
+        }
+    });
+
+    const size = document.createElement('span');
+    size.className = 'file-meta';
+    size.textContent = item.type === 'folder' ? '-' : formatBytes(item.size);
+
+    const modified = document.createElement('span');
+    modified.className = 'file-meta';
+    modified.textContent = formatDate(item.modifiedAt);
+
+    const actions = document.createElement('div');
+    actions.className = 'row-actions';
+
+    if (item.type === 'folder') {
+        actions.appendChild(rowButton('Open', () => loadDrive(item.path)));
+    } else {
+        actions.appendChild(rowButton('Download', () => downloadFile(item)));
+    }
+    actions.appendChild(rowButton('Delete', () => deleteItem(item)));
+
+    row.append(name, size, modified, actions);
+    return row;
+}
+
+function rowButton(text, handler) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'row-button';
+    button.textContent = text;
+    button.addEventListener('click', handler);
+    return button;
+}
+
+async function downloadFile(item) {
+    setDriveMessage('Preparing download...');
+    try {
+        const response = await fetch(`/api/v1/files/download?path=${encodeURIComponent(item.path)}`, {
+            headers: { Authorization: `Bearer ${state.session.accessToken}` }
+        });
+        if (!response.ok) throw new Error('Download failed.');
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = item.name;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+        setDriveMessage('');
+    } catch (error) {
+        setDriveMessage(error.message, true);
+    }
+}
+
+async function deleteItem(item) {
+    if (!confirm(`Delete ${item.name}?`)) {
+        return;
+    }
+
+    setDriveMessage('Deleting...');
+    try {
+        await api(`/api/v1/files?path=${encodeURIComponent(item.path)}`, { method: 'DELETE' });
+        await loadDrive(state.currentPath);
+    } catch (error) {
+        setDriveMessage(error.message, true);
+    }
+}
+
+async function uploadSelectedFiles() {
+    const files = [...fileInput.files];
+    if (!files.length) return;
+
+    const body = new FormData();
+    files.forEach((file) => body.append('files', file));
+
+    setDriveMessage('Uploading...');
+    try {
+        await api(`/api/v1/files/upload?path=${encodeURIComponent(state.currentPath)}`, {
+            method: 'POST',
+            body
+        });
+        fileInput.value = '';
+        await loadDrive(state.currentPath);
+    } catch (error) {
+        setDriveMessage(error.message, true);
+    }
+}
+
+async function createFolder() {
+    const name = prompt('Folder name');
+    if (!name) return;
+
+    setDriveMessage('Creating folder...');
+    try {
+        await api('/api/v1/files/folders', {
+            method: 'POST',
+            body: { path: state.currentPath, name }
+        });
+        await loadDrive(state.currentPath);
+    } catch (error) {
+        setDriveMessage(error.message, true);
+    }
+}
+
+function setDriveMessage(message, error = false) {
+    const target = document.querySelector('#drive-message');
+    target.textContent = message;
+    target.classList.toggle('error', error);
+}
+
+function formatBytes(bytes) {
+    if (!bytes) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+    const value = bytes / Math.pow(1024, index);
+    return `${value.toFixed(value >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
+}
+
+function formatDate(value) {
+    if (!value) return '-';
+    return new Intl.DateTimeFormat('en', {
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+    }).format(new Date(value));
+}
+
+authTabs.forEach((button) => {
+    button.addEventListener('click', () => setAuthMode(button.dataset.authMode));
+});
+
+document.querySelectorAll('.password-toggle').forEach((button) => {
     button.addEventListener('click', () => {
         const input = button.parentElement.querySelector('input');
         const visible = input.type === 'text';
         input.type = visible ? 'password' : 'text';
-        button.textContent = visible ? 'SHOW' : 'HIDE';
+        button.classList.toggle('password-visible', !visible);
+        button.setAttribute('aria-label', visible ? 'Show password' : 'Hide password');
     });
 });
 
-async function request(path, body, token) {
-    const response = await fetch(path, {
-        method: 'POST',
-        headers: {
-            ...(body ? { 'Content-Type': 'application/json' } : {}),
-            ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: body ? JSON.stringify(body) : undefined
-    });
-    if (!response.ok) {
-        const message = await response.text();
-        throw new Error(message || '요청을 처리하지 못했습니다.');
+authForms.login.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    setFormMessage(authForms.login, 'Signing in...');
+
+    try {
+        const data = await api('/api/v1/auth/login', {
+            method: 'POST',
+            body: Object.fromEntries(new FormData(authForms.login))
+        });
+        writeSession(data);
+        authForms.login.reset();
+        await showDashboard();
+    } catch (error) {
+        setFormMessage(authForms.login, 'Sign in failed.', true);
     }
-    return response.status === 204 ? null : response.json();
-}
+});
 
-function saveSession(data) {
-    localStorage.setItem('homedriveSession', JSON.stringify(data));
-    showSession(data);
-}
+authForms.register.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    setFormMessage(authForms.register, 'Creating account...');
 
-function showSession(data) {
-    document.querySelector('.tabs').hidden = true;
-    forms.forEach((form) => { form.hidden = true; form.classList.remove('active'); });
-    sessionPanel.hidden = false;
-    document.querySelector('#session-name').textContent = data.user.username;
-    document.querySelector('#session-email').textContent = data.user.email;
-}
+    try {
+        const data = await api('/api/v1/auth/register', {
+            method: 'POST',
+            body: Object.fromEntries(new FormData(authForms.register))
+        });
+        writeSession(data);
+        authForms.register.reset();
+        await showDashboard();
+    } catch (error) {
+        setFormMessage(authForms.register, 'Account creation failed.', true);
+    }
+});
 
-forms.forEach((form) => {
-    form.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        const button = form.querySelector('.primary-button');
-        const message = form.querySelector('.form-message');
-        const body = Object.fromEntries(new FormData(form));
-        button.disabled = true;
-        message.className = 'form-message';
-        message.textContent = 'CONNECTING...';
-        try {
-            const action = form.id === 'login-panel' ? 'login' : 'register';
-            const data = await request(`/api/v1/auth/${action}`, body);
-            saveSession(data);
-            form.reset();
-        } catch (error) {
-            message.classList.add('error');
-            message.textContent = error.message;
-        } finally {
-            button.disabled = false;
+navButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+        setView(button.dataset.view);
+        if (button.dataset.view === 'drive' && !state.drive) {
+            loadDrive(state.currentPath);
         }
     });
 });
 
+document.querySelectorAll('[data-go-drive]').forEach((button) => {
+    button.addEventListener('click', () => {
+        setView('drive');
+        if (!state.drive) loadDrive(state.currentPath);
+    });
+});
+
 document.querySelector('#logout-button').addEventListener('click', async () => {
-    const session = JSON.parse(localStorage.getItem('homedriveSession') || 'null');
-    if (!session) return;
-    const button = document.querySelector('#logout-button');
-    button.disabled = true;
     try {
-        await request('/api/v1/auth/logout', null, session.accessToken);
+        await api('/api/v1/auth/logout', { method: 'POST' });
     } catch (error) {
         console.warn(error.message);
     } finally {
-        localStorage.removeItem('homedriveSession');
-        sessionPanel.hidden = true;
-        document.querySelector('.tabs').hidden = false;
-        switchTab('login');
-        button.disabled = false;
+        clearSession();
+        showAuth();
+        setAuthMode('login');
     }
 });
 
-try {
-    const saved = JSON.parse(localStorage.getItem('homedriveSession') || 'null');
-    if (saved?.accessToken && saved?.user) showSession(saved);
-} catch {
-    localStorage.removeItem('homedriveSession');
+document.querySelector('#refresh-drive').addEventListener('click', () => loadDrive(state.currentPath));
+document.querySelector('#new-folder').addEventListener('click', createFolder);
+document.querySelector('#upload-trigger').addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', uploadSelectedFiles);
+
+if (state.session?.accessToken && state.session?.user) {
+    showDashboard();
+} else {
+    showAuth();
+    setAuthMode('login');
 }

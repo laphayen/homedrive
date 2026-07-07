@@ -1,39 +1,51 @@
 name: homedrive
 
+x-spring-common: &spring-common
+  image: homedrive-app:local
+  build:
+    context: .
+    dockerfile: Dockerfile
+  restart: unless-stopped
+  environment:
+    DB_URL: jdbc:mysql://mysql:3306/homedrive?serverTimezone=Asia/Seoul&characterEncoding=UTF-8&allowPublicKeyRetrieval=true
+    DB_USERNAME: homedrive
+    DB_PASSWORD: ${MYSQL_PASSWORD:-homedrive-local-password}
+    REDIS_HOST: redis
+    REDIS_PORT: 6379
+    JWT_SECRET: ${JWT_SECRET:-homedrive-local-jwt-secret-must-be-at-least-32-characters}
+    FILE_BASE_DIR: /data/uploads
+    FILE_CHUNK_TEMP_DIR: /data/chunks
+    SPRING_JPA_OPEN_IN_VIEW: "false"
+  volumes:
+    - app_uploads:/data/uploads
+    - app_chunks:/data/chunks
+  depends_on:
+    mysql:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/"]
+    interval: 10s
+    timeout: 5s
+    retries: 10
+    start_period: 20s
+  networks:
+    - default
+    - shared-proxy
+
 services:
-  app:
-    container_name: homedrive-spring
-    image: homedrive-app:local
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
+  app-primary:
+    <<: *spring-common
+    container_name: homedrive-spring-primary
     ports:
       - "10001:8080"
-    environment:
-      DB_URL: jdbc:mysql://mysql:3306/homedrive?serverTimezone=Asia/Seoul&characterEncoding=UTF-8&allowPublicKeyRetrieval=true
-      DB_USERNAME: homedrive
-      DB_PASSWORD: ${MYSQL_PASSWORD:-homedrive-local-password}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      JWT_SECRET: ${JWT_SECRET:-homedrive-local-jwt-secret-must-be-at-least-32-characters}
-      FILE_BASE_DIR: /data/uploads
-      FILE_CHUNK_TEMP_DIR: /data/chunks
-      SPRING_JPA_OPEN_IN_VIEW: "false"
-    volumes:
-      - app_uploads:/data/uploads
-      - app_chunks:/data/chunks
-    depends_on:
-      mysql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 20s
+
+  app-secondary:
+    <<: *spring-common
+    container_name: homedrive-spring-secondary
+    ports:
+      - "10002:8080"
 
   mysql:
     container_name: homedrive-mysql
@@ -46,7 +58,7 @@ services:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-homedrive-local-root-password}
       TZ: Asia/Seoul
     ports:
-      - "10003:3306"
+      - "10004:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -62,7 +74,7 @@ services:
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "10002:6379"
+      - "10003:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -76,3 +88,7 @@ volumes:
   redis_data:
   app_uploads:
   app_chunks:
+
+networks:
+  shared-proxy:
+    external: true

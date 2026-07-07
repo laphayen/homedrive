@@ -1,0 +1,23 @@
+name: shared-proxy
+
+services:
+  nginx:
+    container_name: shared-nginx
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "10000:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - shared-proxy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+networks:
+  shared-proxy:
+    external: true
