@@ -29,7 +29,7 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint(
-                        (request, response, exception) -> response.sendError(401, "인증이 필요합니다.")
+                        (request, response, exception) -> response.sendError(401, "Authentication is required.")
                 ))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(

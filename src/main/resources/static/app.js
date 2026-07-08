@@ -1,4 +1,5 @@
 const SESSION_KEY = 'homedriveSession';
+const CHUNK_SIZE = 8 * 1024 * 1024;
 
 const authScreen = document.querySelector('#auth-screen');
 const dashboardScreen = document.querySelector('#dashboard-screen');
@@ -10,12 +11,14 @@ const authForms = {
 const navButtons = document.querySelectorAll('[data-view]');
 const views = document.querySelectorAll('.view');
 const fileInput = document.querySelector('#file-input');
+const uploadTrigger = document.querySelector('#upload-trigger');
 
 const state = {
     session: readSession(),
     profile: null,
     currentPath: '/',
-    drive: null
+    drive: null,
+    uploading: false
 };
 
 function readSession() {
@@ -279,26 +282,18 @@ function rowButton(text, handler) {
 }
 
 async function downloadFile(item) {
-    setDriveMessage('Preparing download...');
-    try {
-        const response = await fetch(`/api/v1/files/download?path=${encodeURIComponent(item.path)}`, {
-            headers: { Authorization: `Bearer ${state.session.accessToken}` }
-        });
-        if (!response.ok) throw new Error('Download failed.');
-
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = item.name;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(url);
-        setDriveMessage('');
-    } catch (error) {
-        setDriveMessage(error.message, true);
-    }
+    setDriveMessage('Starting download...');
+    const params = new URLSearchParams({
+        path: item.path,
+        token: state.session.accessToken
+    });
+    const link = document.createElement('a');
+    link.href = `/api/v1/files/download?${params.toString()}`;
+    link.download = item.name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setDriveMessage('');
 }
 
 async function deleteItem(item) {
@@ -316,22 +311,77 @@ async function deleteItem(item) {
 }
 
 async function uploadSelectedFiles() {
+    if (state.uploading) return;
+
     const files = [...fileInput.files];
     if (!files.length) return;
 
-    const body = new FormData();
-    files.forEach((file) => body.append('files', file));
-
-    setDriveMessage('Uploading...');
+    state.uploading = true;
+    uploadTrigger.disabled = true;
     try {
-        await api(`/api/v1/files/upload?path=${encodeURIComponent(state.currentPath)}`, {
-            method: 'POST',
-            body
-        });
+        for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
+            await uploadFileInChunks(files[fileIndex], fileIndex, files.length);
+        }
+
         fileInput.value = '';
         await loadDrive(state.currentPath);
     } catch (error) {
         setDriveMessage(error.message, true);
+    } finally {
+        state.uploading = false;
+        uploadTrigger.disabled = false;
+    }
+}
+
+async function uploadFileInChunks(file, fileIndex, fileCount) {
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+    let uploadId = null;
+
+    try {
+        const session = await api('/api/v1/files/uploads', {
+            method: 'POST',
+            body: {
+                path: state.currentPath,
+                filename: file.name,
+                totalSize: file.size,
+                totalChunks
+            }
+        });
+        uploadId = session.uploadId;
+
+        if (totalChunks === 0) {
+            setDriveMessage(`Uploading ${fileIndex + 1}/${fileCount}: ${file.name} 100%`);
+        }
+
+        for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex += 1) {
+            const start = chunkIndex * CHUNK_SIZE;
+            const end = Math.min(start + CHUNK_SIZE, file.size);
+            const body = new FormData();
+            body.append('chunk', file.slice(start, end), file.name);
+
+            await api(`/api/v1/files/uploads/${uploadId}/chunks?index=${chunkIndex}`, {
+                method: 'POST',
+                body
+            });
+
+            const percent = Math.round(((chunkIndex + 1) / totalChunks) * 100);
+            setDriveMessage(`Uploading ${fileIndex + 1}/${fileCount}: ${file.name} ${percent}%`);
+        }
+
+        await api(`/api/v1/files/uploads/${uploadId}/complete`, { method: 'POST' });
+    } catch (error) {
+        if (uploadId) {
+            await cancelUpload(uploadId);
+        }
+        throw error;
+    }
+}
+
+async function cancelUpload(uploadId) {
+    try {
+        await api(`/api/v1/files/uploads/${uploadId}`, { method: 'DELETE' });
+    } catch (error) {
+        console.warn(error.message);
     }
 }
 
@@ -454,7 +504,7 @@ document.querySelector('#logout-button').addEventListener('click', async () => {
 
 document.querySelector('#refresh-drive').addEventListener('click', () => loadDrive(state.currentPath));
 document.querySelector('#new-folder').addEventListener('click', createFolder);
-document.querySelector('#upload-trigger').addEventListener('click', () => fileInput.click());
+uploadTrigger.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', uploadSelectedFiles);
 
 if (state.session?.accessToken && state.session?.user) {

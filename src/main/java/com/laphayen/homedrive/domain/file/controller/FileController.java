@@ -1,9 +1,12 @@
 package com.laphayen.homedrive.domain.file.controller;
 
+import com.laphayen.homedrive.domain.file.dto.ChunkUploadResponseDto;
 import com.laphayen.homedrive.domain.file.dto.CreateFolderRequestDto;
 import com.laphayen.homedrive.domain.file.dto.FileItemDto;
 import com.laphayen.homedrive.domain.file.dto.FileListResponseDto;
+import com.laphayen.homedrive.domain.file.dto.InitiateUploadRequestDto;
 import com.laphayen.homedrive.domain.file.dto.StoredFileResource;
+import com.laphayen.homedrive.domain.file.dto.UploadSessionResponseDto;
 import com.laphayen.homedrive.domain.file.service.FileStorageService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +18,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -56,6 +60,41 @@ public class FileController {
             Authentication authentication
     ) {
         return fileStorageService.upload(authentication.getName(), path, files);
+    }
+
+    @PostMapping("/uploads")
+    public UploadSessionResponseDto initiateUpload(
+            @Valid @RequestBody InitiateUploadRequestDto request,
+            Authentication authentication
+    ) {
+        return fileStorageService.initiateUpload(authentication.getName(), request);
+    }
+
+    @PostMapping(value = "/uploads/{uploadId}/chunks", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ChunkUploadResponseDto uploadChunk(
+            @PathVariable String uploadId,
+            @RequestParam int index,
+            @RequestPart("chunk") MultipartFile chunk,
+            Authentication authentication
+    ) {
+        return fileStorageService.uploadChunk(authentication.getName(), uploadId, index, chunk);
+    }
+
+    @PostMapping("/uploads/{uploadId}/complete")
+    public FileItemDto completeUpload(
+            @PathVariable String uploadId,
+            Authentication authentication
+    ) {
+        return fileStorageService.completeUpload(authentication.getName(), uploadId);
+    }
+
+    @DeleteMapping("/uploads/{uploadId}")
+    public ResponseEntity<Void> cancelUpload(
+            @PathVariable String uploadId,
+            Authentication authentication
+    ) {
+        fileStorageService.cancelUpload(authentication.getName(), uploadId);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/download")

@@ -51,9 +51,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private String resolveToken(HttpServletRequest request) {
         String authorization = request.getHeader("Authorization");
-        if (authorization == null || !authorization.startsWith(BEARER_PREFIX)) {
-            return null;
+        if (authorization != null && authorization.startsWith(BEARER_PREFIX)) {
+            return authorization.substring(BEARER_PREFIX.length());
         }
-        return authorization.substring(BEARER_PREFIX.length());
+
+        if ("GET".equals(request.getMethod()) && "/api/v1/files/download".equals(request.getRequestURI())) {
+            String token = request.getParameter("token");
+            if (token != null && !token.isBlank()) {
+                return token;
+            }
+        }
+
+        return null;
     }
 }

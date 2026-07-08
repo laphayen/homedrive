@@ -23,6 +23,7 @@ public class User {
     @Column(unique = true, nullable = false)
     private String email;
 
+    @Builder.Default
     private String role = "USER";
 
 }
