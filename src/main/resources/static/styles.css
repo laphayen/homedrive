@@ -843,6 +843,150 @@ input::placeholder {
     overflow-wrap: anywhere;
 }
 
+.admin-auth-link {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    margin-top: 18px;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 750;
+    text-decoration: none;
+}
+
+.admin-auth-link:hover {
+    color: var(--white);
+}
+
+.admin-workspace {
+    min-width: 0;
+}
+
+.admin-table-panel,
+.admin-system-panel {
+    padding: 22px;
+}
+
+.admin-panel-head,
+.admin-system-panel > * {
+    position: relative;
+    z-index: 1;
+}
+
+.admin-panel-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid rgba(255, 255, 255, .14);
+}
+
+.admin-panel-head strong {
+    display: block;
+    color: var(--white);
+    font-size: 20px;
+}
+
+.admin-user-table {
+    position: relative;
+    z-index: 1;
+    min-width: 0;
+    overflow: auto;
+}
+
+.admin-user-row {
+    min-width: 780px;
+    min-height: 64px;
+    display: grid;
+    grid-template-columns: minmax(260px, 1fr) 170px 120px 120px 120px;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, .10);
+}
+
+.admin-user-row-head {
+    min-height: 44px;
+    color: var(--muted);
+    font: 700 11px/1 var(--mono);
+    letter-spacing: .12em;
+    text-transform: uppercase;
+}
+
+.admin-user-identity {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+.admin-user-avatar {
+    flex: 0 0 38px;
+    width: 38px;
+    aspect-ratio: 1;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(255, 255, 255, .22);
+    border-radius: 8px;
+    color: var(--white);
+    background: rgba(255, 255, 255, .09);
+    font-weight: 850;
+}
+
+.admin-user-identity strong,
+.admin-user-identity span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.admin-user-identity strong {
+    color: var(--white);
+    font-size: 15px;
+}
+
+.admin-user-identity span {
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 650;
+}
+
+.admin-role-select {
+    width: 100%;
+    height: 36px;
+    padding: 0 10px;
+    border: 1px solid rgba(255, 255, 255, .20);
+    border-radius: 8px;
+    color: var(--white);
+    background: rgba(255, 255, 255, .08);
+    font: 800 12px/1 var(--mono);
+}
+
+.admin-role-select:disabled,
+.row-button:disabled {
+    cursor: not-allowed;
+    opacity: .48;
+}
+
+.danger-button,
+.danger-row-button {
+    border-color: rgba(255, 255, 255, .34);
+}
+
+.danger-button:hover,
+.danger-row-button:hover {
+    background: rgba(255, 255, 255, .16);
+}
+
+.admin-system-panel {
+    min-height: 220px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 20px;
+}
+
 [hidden] {
     display: none !important;
 }
@@ -857,7 +1001,7 @@ input::placeholder {
     }
 
     .nav-list {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
     }
 
     .sidebar-footer {
@@ -888,7 +1032,9 @@ input::placeholder {
 
     .view-header,
     .home-panel,
-    .file-panel-head {
+    .file-panel-head,
+    .admin-panel-head,
+    .admin-system-panel {
         align-items: stretch;
         flex-direction: column;
     }

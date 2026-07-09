@@ -1,5 +1,6 @@
 package com.laphayen.homedrive.global.security;
 
+import com.laphayen.homedrive.domain.user.repository.UserRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -23,6 +24,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider jwtTokenProvider;
     private final StringRedisTemplate redisTemplate;
+    private final UserRepository userRepository;
 
     @Override
     protected void doFilterInternal(
@@ -36,14 +38,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 && jwtTokenProvider.validateToken(token)
                 && !Boolean.TRUE.equals(redisTemplate.hasKey("blacklist:" + token))) {
             String username = jwtTokenProvider.getUsername(token);
-            String role = jwtTokenProvider.getRole(token);
-            UsernamePasswordAuthenticationToken authentication =
-                    new UsernamePasswordAuthenticationToken(
-                            username,
-                            null,
-                            List.of(new SimpleGrantedAuthority("ROLE_" + role))
-                    );
-            SecurityContextHolder.getContext().setAuthentication(authentication);
+            userRepository.findByUsername(username).ifPresent(user -> {
+                UsernamePasswordAuthenticationToken authentication =
+                        new UsernamePasswordAuthenticationToken(
+                                username,
+                                null,
+                                List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole()))
+                        );
+                SecurityContextHolder.getContext().setAuthentication(authentication);
+            });
         }
 
         filterChain.doFilter(request, response);

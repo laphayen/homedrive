@@ -3,6 +3,8 @@ package com.laphayen.homedrive.domain.user.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.time.LocalDateTime;
+
 @Entity
 @Getter @Setter
 @NoArgsConstructor
@@ -25,5 +27,18 @@ public class User {
 
     @Builder.Default
     private String role = "USER";
+
+    @Column(updatable = false)
+    private LocalDateTime createdAt;
+
+    @PrePersist
+    void prePersist() {
+        if (role == null || role.isBlank()) {
+            role = "USER";
+        }
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now();
+        }
+    }
 
 }

@@ -54,6 +54,40 @@ public class FileStorageService {
     @Value("${file.max-chunk-size:10MB}")
     private DataSize maxChunkSize;
 
+    public FileStatsDto getStorageStats(User user) {
+        Path root = ensureUserRoot(user);
+        return buildStats(root);
+    }
+
+    public void deleteStorage(User user) {
+        deleteRecursively(userRoot(user));
+        deleteRecursively(chunkRoot(user));
+    }
+
+    public long countActiveUploadSessions() {
+        Path root = Path.of(chunkTempDir).toAbsolutePath().normalize();
+        if (!Files.exists(root)) {
+            return 0;
+        }
+
+        try (Stream<Path> stream = Files.find(root, 4, (path, attrs) ->
+                attrs.isRegularFile() && "upload.properties".equals(path.getFileName().toString()))) {
+            return stream.count();
+        } catch (IOException e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Unable to count uploads.", e);
+        }
+    }
+
+    public void clearUploadSessions() {
+        Path root = Path.of(chunkTempDir).toAbsolutePath().normalize();
+        deleteRecursively(root);
+        try {
+            Files.createDirectories(root);
+        } catch (IOException e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Unable to prepare upload storage.", e);
+        }
+    }
+
     public FileListResponseDto list(String username, String path) {
         User user = findUser(username);
         Path root = ensureUserRoot(user);
@@ -335,11 +369,7 @@ public class FileStorageService {
     }
 
     private Path ensureUserRoot(User user) {
-        Path root = Path.of(baseDir)
-                .toAbsolutePath()
-                .normalize()
-                .resolve("user-" + user.getId())
-                .normalize();
+        Path root = userRoot(user);
         try {
             Files.createDirectories(root);
             return root;
@@ -354,17 +384,29 @@ public class FileStorageService {
     }
 
     private Path ensureChunkRoot(User user) {
-        Path root = Path.of(chunkTempDir)
-                .toAbsolutePath()
-                .normalize()
-                .resolve("user-" + user.getId())
-                .normalize();
+        Path root = chunkRoot(user);
         try {
             Files.createDirectories(root);
             return root;
         } catch (IOException e) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Unable to prepare upload storage.", e);
         }
+    }
+
+    private Path userRoot(User user) {
+        return Path.of(baseDir)
+                .toAbsolutePath()
+                .normalize()
+                .resolve("user-" + user.getId())
+                .normalize();
+    }
+
+    private Path chunkRoot(User user) {
+        return Path.of(chunkTempDir)
+                .toAbsolutePath()
+                .normalize()
+                .resolve("user-" + user.getId())
+                .normalize();
     }
 
     private void validateUploadId(String uploadId) {

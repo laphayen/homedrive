@@ -12,6 +12,7 @@ const navButtons = document.querySelectorAll('[data-view]');
 const views = document.querySelectorAll('.view');
 const fileInput = document.querySelector('#file-input');
 const uploadTrigger = document.querySelector('#upload-trigger');
+const adminConsoleLink = document.querySelector('#admin-console-link');
 
 const state = {
     session: readSession(),
@@ -41,6 +42,9 @@ function clearSession() {
     state.profile = null;
     state.drive = null;
     state.currentPath = '/';
+    if (adminConsoleLink) {
+        adminConsoleLink.hidden = true;
+    }
 }
 
 async function api(path, options = {}) {
@@ -126,6 +130,7 @@ function updateUserSurfaces(user) {
 
     const username = user.username || 'user';
     const email = user.email || '';
+    const role = user.role || 'USER';
     document.querySelector('#sidebar-user').textContent = username;
     document.querySelector('#home-username').textContent = username;
     document.querySelector('#home-email').textContent = email;
@@ -133,6 +138,9 @@ function updateUserSurfaces(user) {
     document.querySelector('#profile-email').textContent = email;
     document.querySelector('#profile-id').textContent = user.id || '-';
     document.querySelector('#profile-initial').textContent = username.slice(0, 1).toUpperCase();
+    if (adminConsoleLink) {
+        adminConsoleLink.hidden = role !== 'ADMIN';
+    }
 }
 
 function updateProfile(profile) {
@@ -488,6 +496,10 @@ document.querySelectorAll('[data-go-drive]').forEach((button) => {
         setView('drive');
         if (!state.drive) loadDrive(state.currentPath);
     });
+});
+
+adminConsoleLink?.addEventListener('click', () => {
+    window.location.href = '/admin.html';
 });
 
 document.querySelector('#logout-button').addEventListener('click', async () => {
