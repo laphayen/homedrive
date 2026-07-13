@@ -8,6 +8,7 @@ import com.laphayen.homedrive.domain.file.dto.FileTreeNodeDto;
 import com.laphayen.homedrive.domain.file.dto.InitiateUploadRequestDto;
 import com.laphayen.homedrive.domain.file.dto.StoredFileResource;
 import com.laphayen.homedrive.domain.file.dto.UploadSessionResponseDto;
+import com.laphayen.homedrive.domain.file.dto.UploadSessionStatusResponseDto;
 import com.laphayen.homedrive.domain.user.entity.User;
 import com.laphayen.homedrive.domain.user.repository.UserRepository;
 import com.laphayen.homedrive.global.exception.UserNotFoundException;
@@ -72,7 +73,7 @@ public class FileStorageService {
 
         try (Stream<Path> stream = Files.find(root, 4, (path, attrs) ->
                 attrs.isRegularFile() && "upload.properties".equals(path.getFileName().toString()))) {
-            return stream.count();
+            return stream.filter(this::isActiveUploadMetadata).count();
         } catch (IOException e) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Unable to count uploads.", e);
         }
@@ -222,6 +223,9 @@ public class FileStorageService {
         Properties metadata = readUploadMetadata(user, uploadId);
         int totalChunks = readInt(metadata, "totalChunks");
 
+        if (isCompletedUpload(metadata)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Upload is already complete.");
+        }
         if (totalChunks <= 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Upload does not accept chunks.");
         }
@@ -254,6 +258,24 @@ public class FileStorageService {
         }
     }
 
+    public UploadSessionStatusResponseDto uploadStatus(String username, String uploadId) {
+        User user = findUser(username);
+        Properties metadata = readUploadMetadata(user, uploadId);
+        int totalChunks = readInt(metadata, "totalChunks");
+        Path sessionDirectory = uploadDirectory(user, uploadId);
+        int receivedChunks = countReceivedChunks(sessionDirectory, totalChunks);
+
+        return new UploadSessionStatusResponseDto(
+                uploadId,
+                metadata.getProperty("path"),
+                metadata.getProperty("filename"),
+                readLong(metadata, "totalSize"),
+                totalChunks,
+                receivedChunks,
+                isCompletedUpload(metadata) || (totalChunks > 0 && receivedChunks == totalChunks)
+        );
+    }
+
     public FileItemDto completeUpload(String username, String uploadId) {
         User user = findUser(username);
         Path root = ensureUserRoot(user);
@@ -261,10 +283,6 @@ public class FileStorageService {
         int totalChunks = readInt(metadata, "totalChunks");
         long expectedSize = readLong(metadata, "totalSize");
         Path sessionDirectory = uploadDirectory(user, uploadId);
-
-        if (countReceivedChunks(sessionDirectory, totalChunks) != totalChunks) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Upload is incomplete.");
-        }
 
         Path directory = resolve(root, metadata.getProperty("path"));
         if (!Files.isDirectory(directory)) {
@@ -276,6 +294,24 @@ public class FileStorageService {
         Path assembling = target.resolveSibling(target.getFileName() + ".uploading-" + uploadId);
 
         try {
+            if (isCompletedUpload(metadata)) {
+                if (!isCompletedTarget(target, expectedSize)) {
+                    throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Completed file not found.");
+                }
+                deleteChunkFiles(sessionDirectory, totalChunks);
+                return toItem(root, target);
+            }
+
+            if (isCompletedTarget(target, expectedSize)) {
+                markUploadCompleted(sessionDirectory, metadata);
+                deleteChunkFiles(sessionDirectory, totalChunks);
+                return toItem(root, target);
+            }
+
+            if (countReceivedChunks(sessionDirectory, totalChunks) != totalChunks) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Upload is incomplete.");
+            }
+
             try (OutputStream outputStream = Files.newOutputStream(
                     assembling,
                     StandardOpenOption.CREATE,
@@ -294,7 +330,8 @@ public class FileStorageService {
             }
 
             moveCompletedFile(assembling, target);
-            deleteRecursively(sessionDirectory);
+            markUploadCompleted(sessionDirectory, metadata);
+            deleteChunkFiles(sessionDirectory, totalChunks);
 
             return toItem(root, target);
         } catch (ResponseStatusException e) {
@@ -473,6 +510,44 @@ public class FileStorageService {
             }
         }
         return received;
+    }
+
+    private boolean isActiveUploadMetadata(Path metadataFile) {
+        try (var inputStream = Files.newInputStream(metadataFile)) {
+            Properties metadata = new Properties();
+            metadata.load(inputStream);
+            return !isCompletedUpload(metadata);
+        } catch (IOException e) {
+            return true;
+        }
+    }
+
+    private boolean isCompletedUpload(Properties metadata) {
+        return Boolean.parseBoolean(metadata.getProperty("completed", "false"));
+    }
+
+    private boolean isCompletedTarget(Path target, long expectedSize) throws IOException {
+        return Files.isRegularFile(target) && Files.size(target) == expectedSize;
+    }
+
+    private void markUploadCompleted(Path sessionDirectory, Properties metadata) throws IOException {
+        metadata.setProperty("completed", "true");
+        metadata.setProperty("completedAt", String.valueOf(System.currentTimeMillis()));
+
+        try (OutputStream outputStream = Files.newOutputStream(
+                metadataPath(sessionDirectory),
+                StandardOpenOption.CREATE,
+                StandardOpenOption.TRUNCATE_EXISTING,
+                StandardOpenOption.WRITE
+        )) {
+            metadata.store(outputStream, "HomeDrive chunked upload");
+        }
+    }
+
+    private void deleteChunkFiles(Path sessionDirectory, int totalChunks) throws IOException {
+        for (int index = 0; index < totalChunks; index++) {
+            Files.deleteIfExists(chunkPath(sessionDirectory, index));
+        }
     }
 
     private void moveCompletedFile(Path source, Path target) throws IOException {

@@ -341,4 +341,8 @@ gradle-app.setting
 # Java heap dump
 *.hprof
 
+# HomeDrive local runtime storage
+uploads/
+temp/
+
 # End of https://www.toptal.com/developers/gitignore/api/macos,intellij,intellij+all,intellij+iml,gradle,java,windows

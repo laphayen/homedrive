@@ -1,5 +1,6 @@
 const SESSION_KEY = 'homedriveSession';
 const CHUNK_SIZE = 8 * 1024 * 1024;
+const RETRYABLE_STATUS_CODES = new Set([408, 425, 429, 502, 503, 504]);
 
 const authScreen = document.querySelector('#auth-screen');
 const dashboardScreen = document.querySelector('#dashboard-screen');
@@ -48,40 +49,68 @@ function clearSession() {
 }
 
 async function api(path, options = {}) {
-    const headers = { ...(options.headers || {}) };
-    const fetchOptions = {
-        method: options.method || 'GET',
-        headers
-    };
+    const retries = options.retries || 0;
 
-    if (state.session?.accessToken) {
-        headers.Authorization = `Bearer ${state.session.accessToken}`;
+    for (let attempt = 0; attempt <= retries; attempt += 1) {
+        const headers = { ...(options.headers || {}) };
+        const fetchOptions = {
+            method: options.method || 'GET',
+            headers
+        };
+
+        if (state.session?.accessToken) {
+            headers.Authorization = `Bearer ${state.session.accessToken}`;
+        }
+
+        if (options.body instanceof FormData) {
+            fetchOptions.body = options.body;
+        } else if (options.body) {
+            headers['Content-Type'] = 'application/json';
+            fetchOptions.body = JSON.stringify(options.body);
+        }
+
+        try {
+            const response = await fetch(path, fetchOptions);
+
+            if (response.status === 401 || response.status === 403) {
+                clearSession();
+                showAuth();
+                throw new Error('Session expired.');
+            }
+
+            if (RETRYABLE_STATUS_CODES.has(response.status) && attempt < retries) {
+                await sleep(retryDelay(attempt));
+                continue;
+            }
+
+            if (!response.ok) {
+                const requestError = new Error('Request failed.');
+                requestError.noRetry = true;
+                throw requestError;
+            }
+
+            if (response.status === 204) {
+                return null;
+            }
+
+            return response.json();
+        } catch (error) {
+            if (error.noRetry || error.message === 'Session expired.' || attempt >= retries) {
+                throw error;
+            }
+            await sleep(retryDelay(attempt));
+        }
     }
 
-    if (options.body instanceof FormData) {
-        fetchOptions.body = options.body;
-    } else if (options.body) {
-        headers['Content-Type'] = 'application/json';
-        fetchOptions.body = JSON.stringify(options.body);
-    }
+    throw new Error('Request failed.');
+}
 
-    const response = await fetch(path, fetchOptions);
+function sleep(ms) {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
 
-    if (response.status === 401 || response.status === 403) {
-        clearSession();
-        showAuth();
-        throw new Error('Session expired.');
-    }
-
-    if (!response.ok) {
-        throw new Error('Request failed.');
-    }
-
-    if (response.status === 204) {
-        return null;
-    }
-
-    return response.json();
+function retryDelay(attempt) {
+    return 400 * Math.pow(2, attempt);
 }
 
 function setAuthMode(mode) {
@@ -353,15 +382,19 @@ async function uploadFileInChunks(file, fileIndex, fileCount) {
                 filename: file.name,
                 totalSize: file.size,
                 totalChunks
-            }
+            },
+            retries: 1
         });
         uploadId = session.uploadId;
+
+        const status = await api(`/api/v1/files/uploads/${uploadId}`, { retries: 3 });
+        let uploadedChunks = status.receivedChunks || 0;
 
         if (totalChunks === 0) {
             setDriveMessage(`Uploading ${fileIndex + 1}/${fileCount}: ${file.name} 100%`);
         }
 
-        for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex += 1) {
+        for (let chunkIndex = uploadedChunks; chunkIndex < totalChunks; chunkIndex += 1) {
             const start = chunkIndex * CHUNK_SIZE;
             const end = Math.min(start + CHUNK_SIZE, file.size);
             const body = new FormData();
@@ -369,18 +402,17 @@ async function uploadFileInChunks(file, fileIndex, fileCount) {
 
             await api(`/api/v1/files/uploads/${uploadId}/chunks?index=${chunkIndex}`, {
                 method: 'POST',
-                body
+                body,
+                retries: 5
             });
 
-            const percent = Math.round(((chunkIndex + 1) / totalChunks) * 100);
+            uploadedChunks = chunkIndex + 1;
+            const percent = Math.round((uploadedChunks / totalChunks) * 100);
             setDriveMessage(`Uploading ${fileIndex + 1}/${fileCount}: ${file.name} ${percent}%`);
         }
 
-        await api(`/api/v1/files/uploads/${uploadId}/complete`, { method: 'POST' });
+        await api(`/api/v1/files/uploads/${uploadId}/complete`, { method: 'POST', retries: 5 });
     } catch (error) {
-        if (uploadId) {
-            await cancelUpload(uploadId);
-        }
         throw error;
     }
 }

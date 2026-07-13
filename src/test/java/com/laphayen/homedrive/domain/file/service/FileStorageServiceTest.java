@@ -4,6 +4,7 @@ import com.laphayen.homedrive.domain.file.dto.FileItemDto;
 import com.laphayen.homedrive.domain.file.dto.FileListResponseDto;
 import com.laphayen.homedrive.domain.file.dto.InitiateUploadRequestDto;
 import com.laphayen.homedrive.domain.file.dto.UploadSessionResponseDto;
+import com.laphayen.homedrive.domain.file.dto.UploadSessionStatusResponseDto;
 import com.laphayen.homedrive.domain.user.entity.User;
 import com.laphayen.homedrive.domain.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -81,13 +82,24 @@ class FileStorageServiceTest {
         UploadSessionResponseDto session = fileStorageService.initiateUpload("tester", request);
         fileStorageService.uploadChunk("tester", session.uploadId(), 0,
                 new MockMultipartFile("chunk", "chunk-0", "application/octet-stream", "hello ".getBytes(StandardCharsets.UTF_8)));
+
+        UploadSessionStatusResponseDto status = fileStorageService.uploadStatus("tester", session.uploadId());
+        assertThat(status.receivedChunks()).isEqualTo(1);
+        assertThat(status.complete()).isFalse();
+        assertThat(fileStorageService.countActiveUploadSessions()).isEqualTo(1);
+
         fileStorageService.uploadChunk("tester", session.uploadId(), 1,
                 new MockMultipartFile("chunk", "chunk-1", "application/octet-stream", "world".getBytes(StandardCharsets.UTF_8)));
 
         FileItemDto completed = fileStorageService.completeUpload("tester", session.uploadId());
+        FileItemDto repeatedComplete = fileStorageService.completeUpload("tester", session.uploadId());
+        UploadSessionStatusResponseDto completedStatus = fileStorageService.uploadStatus("tester", session.uploadId());
 
         assertThat(completed.path()).isEqualTo("/docs/large.txt");
         assertThat(completed.size()).isEqualTo(11);
+        assertThat(repeatedComplete.path()).isEqualTo("/docs/large.txt");
+        assertThat(completedStatus.complete()).isTrue();
+        assertThat(fileStorageService.countActiveUploadSessions()).isZero();
         assertThat(Files.readString(tempDir.resolve("user-7/docs/large.txt"))).isEqualTo("hello world");
     }
 
